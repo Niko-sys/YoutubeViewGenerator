@@ -4,7 +4,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
-from threading import Thread
 import threading
 import time, random
 '''
@@ -12,11 +11,6 @@ import time, random
     - selenium
     - webdriver
 '''
-
-playlist_url = ""
-# 10 songs of 3min average
-length_playlist = 16 * 3 * 60
-amount_browsers = 7
 
 class YouTube:
 
@@ -26,12 +20,15 @@ class YouTube:
         chrome_options = webdriver.ChromeOptions()
         chrome_options.add_argument("--mute-audio")
         self.browser = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
-        self.browser.get("https://www.youtube.com")
-        time.sleep(3)
-        threading.Timer(10.0, self.dismissOverlays).start()
+        #self.browser = webdriver.Firefox()
 
     def openPlayList(self, url):
         self.browser.get(url)
+        self.dismissOverlays(start_delay=15)
+        thread = threading.Timer(10.0, self.dismissOverlays)
+        thread.daemon = True
+        thread.start()
+
 
     def search(self, query):
         words = query.split(" ")
@@ -43,27 +40,48 @@ class YouTube:
         self.browser.get(url)
         time.sleep(3)
 
-    def openVideo(self):
+    def openVideo(self, value, sleep):
         print("opening video")
         xpath = '//*[@id="video-title"]'
         WebDriverWait(self.browser, self.delay).until(EC.presence_of_element_located((By.XPATH, xpath)))
-        elements = self.browser.find_elements_by_xpath(xpath)
-        random.shuffle(elements)
+        elements = self.browser.find_elements_by_xpath(xpath)[1:]
+        #random.shuffle(elements)
         for element in elements:
             label = element.get_attribute("aria-label")
-            print(label)
-            if 'Teeti' in label:
-                element.click()
+            if not label:
+                continue
 
-                return self.openVideo()
+            print(label)
+            if value in label:
+                time.sleep(sleep)
+                try:
+                    element.click()
+                except:
+                    return self.openVideo(value, 0)
+
+                parts = label.split(' ')
+                minutes, seconds = 0, 0
+                for index, part in enumerate(parts):
+                    try:
+                        if 'sec' in part:
+                            seconds += int(part[index-1])
+                        if 'min' in part:
+                            minutes += int(part[index-1])
+                    except Exception as e:
+                        print(e)
+
+                # Sleep length of video
+                new_sleep = (minutes*60) + seconds
+
+                return self.openVideo(value, new_sleep)
 
         print("Ending videos")
         return
 
-    def dismissOverlays(self):
+    def dismissOverlays(self, start_delay=3):
         try:
             xpath_deny = '//*[@id="dismiss-button"]'
-            WebDriverWait(self.browser, self.delay).until(EC.presence_of_element_located((By.XPATH, xpath_deny)))
+            WebDriverWait(self.browser, start_delay).until(EC.presence_of_element_located((By.XPATH, xpath_deny)))
             btn_deny = self.browser.find_element_by_xpath(xpath_deny)
             btn_deny.click()
         except Exception as e:
@@ -71,11 +89,11 @@ class YouTube:
 
         try:
             xpath_iframe = '//*[@id="dialog"]/iframe'
-            WebDriverWait(self.browser, self.delay).until(EC.presence_of_element_located((By.XPATH, xpath_iframe)))
+            WebDriverWait(self.browser, start_delay).until(EC.presence_of_element_located((By.XPATH, xpath_iframe)))
             self.browser.switch_to.frame(self.browser.find_element_by_xpath(xpath_iframe))
 
             xpath_acceptcookies = '//*[@id="introAgreeButton"]'
-            WebDriverWait(self.browser, self.delay).until(EC.presence_of_element_located((By.XPATH, xpath_acceptcookies)))
+            WebDriverWait(self.browser, start_delay).until(EC.presence_of_element_located((By.XPATH, xpath_acceptcookies)))
             btn_accept = self.browser.find_element_by_xpath(xpath_acceptcookies)
             btn_accept.click()
         except Exception as e:
@@ -90,18 +108,43 @@ class YouTube:
         except:
             pass
 
-def handler():
-    session = YouTube()
-    session.openPlayList(playlist_url)
-    time.sleep(length_playlist)
-    session.browser.quit()
-    return Thread(target=handler).start()
-
-
 if __name__ == '__main__':
-    for index in range(amount_browsers):
-        Thread(target=handler).start()
-        time.sleep(30)
+    playlist_url = ""
+    length_playlist = 11 * 3 * 60
+    amount_browsers = 7
 
-    #session.search("blzbla")
-    #session.openVideo()
+    sessions = []
+
+    for index in range(amount_browsers):
+        session = YouTube()
+        session.openPlayList(playlist_url)
+        sessions.append(session)
+        time.sleep(20)
+
+    while True:
+
+        time.sleep(length_playlist)
+
+        sessions_copy = sessions.copy()
+
+        for session in sessions_copy:
+            sessions.remove(session)
+            try:
+                session.browser.quit()
+            except:
+                pass
+            session = YouTube()
+            session.openPlayList(playlist_url)
+            sessions.append(session)
+            time.sleep(20)
+
+
+
+    '''
+    session = YouTube()
+    session.search("short video")
+    session.openVideo(value='', sleep=0)
+    '''
+
+
+
